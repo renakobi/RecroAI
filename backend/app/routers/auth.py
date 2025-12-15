@@ -33,15 +33,40 @@ def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
             detail="Username already taken"
         )
     
-    # Create new user
+    # Extract company name from email domain or use default
+    email_domain = user_data.email.split('@')[1] if '@' in user_data.email else 'default.com'
+    company_name = email_domain.split('.')[0].title() + " Company"
+    
+    # Find or create company
+    company = db.query(models.Company).filter(models.Company.name == company_name).first()
+    if not company:
+        company = models.Company(
+            name=company_name,
+            domain=email_domain,
+            is_active=True
+        )
+        db.add(company)
+        db.flush()  # Flush to get company.id without committing (keeps in same transaction)
+        db.refresh(company)  # Explicitly refresh to ensure ID is loaded
+    
+    # Verify company has an ID
+    if not company or not company.id:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create or retrieve company. Company exists: {company is not None}, ID: {getattr(company, 'id', None) if company else None}"
+        )
+    
+    # Create new user with the company_id
     hashed_password = get_password_hash(user_data.password)
     db_user = models.User(
         email=user_data.email,
         username=user_data.username,
-        hashed_password=hashed_password
+        hashed_password=hashed_password,
+        company_id=company.id  # This should definitely have a value now
     )
     db.add(db_user)
-    db.commit()
+    db.commit()  # Commit both company and user together
     db.refresh(db_user)
     
     return db_user
@@ -73,4 +98,3 @@ def login(
 def get_current_user_info(current_user: models.User = Depends(get_current_active_user)):
     """Get current user information"""
     return current_user
-

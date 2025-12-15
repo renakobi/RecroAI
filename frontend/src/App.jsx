@@ -39,20 +39,26 @@ function App() {
   }, [])
 
   const checkAuth = async () => {
-    const token = localStorage.getItem('auth_token')
-    if (token) {
-      try {
-        await authAPI.getCurrentUser()
-        setIsAuthenticated(true)
-      } catch (error) {
-        console.error('Auth check failed:', error)
-        localStorage.removeItem('auth_token')
+    try {
+      const token = localStorage.getItem('auth_token')
+      if (token) {
+        try {
+          await authAPI.getCurrentUser()
+          setIsAuthenticated(true)
+        } catch (error) {
+          console.error('Auth check failed:', error)
+          localStorage.removeItem('auth_token')
+          setIsAuthenticated(false)
+        }
+      } else {
         setIsAuthenticated(false)
       }
-    } else {
+    } catch (error) {
+      console.error('Unexpected error during auth check:', error)
       setIsAuthenticated(false)
+    } finally {
+      setIsLoadingAuth(false)
     }
-    setIsLoadingAuth(false)
   }
 
   const handleLogin = async (username, password) => {
