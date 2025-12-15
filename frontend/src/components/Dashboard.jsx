@@ -1,7 +1,12 @@
 import CandidateTable from './CandidateTable'
+import FilterPanel from './FilterPanel'
 import './Dashboard.css'
 
-function Dashboard({ candidates, selectedJob, loading }) {
+function Dashboard({ candidates, allCandidates, selectedJob, loading, filters, onFilterChange, universities, companies }) {
+  const hasActiveFilters = filters.university || filters.company || filters.minExperience !== null
+  const filteredCount = candidates.length
+  const totalCount = allCandidates.length
+
   return (
     <main className="dashboard">
       <div className="dashboard-header">
@@ -11,7 +16,15 @@ function Dashboard({ candidates, selectedJob, loading }) {
           </h2>
           {selectedJob && (
             <span className="dashboard-subtitle">
-              {candidates.length} candidate{candidates.length !== 1 ? 's' : ''}
+              {hasActiveFilters ? (
+                <>
+                  {filteredCount} of {totalCount} candidate{totalCount !== 1 ? 's' : ''}
+                </>
+              ) : (
+                <>
+                  {totalCount} candidate{totalCount !== 1 ? 's' : ''}
+                </>
+              )}
             </span>
           )}
         </div>
@@ -23,7 +36,26 @@ function Dashboard({ candidates, selectedJob, loading }) {
             <p>Loading candidates...</p>
           </div>
         ) : selectedJob ? (
-          <CandidateTable candidates={candidates} />
+          <>
+            <FilterPanel
+              filters={filters}
+              onFilterChange={onFilterChange}
+              universities={universities}
+              companies={companies}
+              loading={loading}
+            />
+            {candidates.length === 0 ? (
+              <div className="empty-state">
+                <p>
+                  {filters.university || filters.company || filters.minExperience !== null
+                    ? 'No candidates match the selected filters'
+                    : 'No candidates found for this job'}
+                </p>
+              </div>
+            ) : (
+              <CandidateTable candidates={candidates} />
+            )}
+          </>
         ) : (
           <div className="empty-state">
             <p>Select a job from the sidebar to view candidates</p>
@@ -35,4 +67,3 @@ function Dashboard({ candidates, selectedJob, loading }) {
 }
 
 export default Dashboard
-
