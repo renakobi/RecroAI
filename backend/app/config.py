@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     APP_NAME: str = "RecroAI API"
     DEBUG: bool = True
     
+    # LLM Settings (optional, can use env vars instead)
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_API_BASE: str = "https://api.openai.com/v1"
+    LLM_MODEL: str = "gpt-4o-mini"
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

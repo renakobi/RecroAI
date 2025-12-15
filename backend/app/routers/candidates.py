@@ -1,13 +1,15 @@
 import csv
 import io
 import json
-from typing import List
+from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from .. import models
 from ..auth import get_current_active_user
 from ..database import get_db
-from ..schemas import CandidateResponse, CSVUploadResponse
+from ..schemas import CandidateResponse, CSVUploadResponse, LinkedInProfileCreate, CandidateCreateResponse, AuthenticityCheckRequest, AuthenticityCheckResponse
+from ..services.linkedin_service import create_candidate_from_linkedin
+from ..services.authenticity_service import get_authenticity_service
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -172,4 +174,137 @@ def get_candidate(
             detail="Candidate not found"
         )
     return candidate
+
+
+@router.post("/from-linkedin", response_model=CandidateCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_candidate_from_linkedin_profile(
+    request: LinkedInProfileCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    Create a candidate from LinkedIn profile data.
+    
+    Accepts LinkedIn profile data from an API response, normalizes it into the same
+    raw_profile format as CSV uploads, and saves it as a Candidate linked to the
+    authenticated user's company.
+    """
+    try:
+        # Create candidate data from LinkedIn profile
+        candidate_data = create_candidate_from_linkedin(
+            linkedin_data=request.linkedin_data,
+            company_id=current_user.company_id,
+            linkedin_id=request.linkedin_id
+        )
+        
+        # Check if candidate with same external_id already exists
+        if candidate_data["external_id"]:
+            existing = db.query(models.Candidate).filter(
+                models.Candidate.company_id == current_user.company_id,
+                models.Candidate.external_id == candidate_data["external_id"],
+                models.Candidate.source == "linkedin"
+            ).first()
+            
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Candidate with LinkedIn ID {candidate_data['external_id']} already exists"
+                )
+        
+        # Create candidate
+        candidate = models.Candidate(**candidate_data)
+        db.add(candidate)
+        db.commit()
+        db.refresh(candidate)
+        
+        return CandidateCreateResponse(
+            message="Candidate created successfully from LinkedIn profile",
+            candidate=CandidateResponse.model_validate(candidate)
+        )
+        
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error processing LinkedIn profile: {str(e)}"
+        )
+
+
+@router.post("/check-authenticity", response_model=AuthenticityCheckResponse)
+async def check_candidate_authenticity(
+    request: AuthenticityCheckRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    Check candidate profile for prompt injection attempts and suspicious content.
+    
+    Uses both keyword heuristics and LLM classification.
+    Only flags - does not block candidates.
+    """
+    # Verify candidate belongs to user's company
+    candidate = db.query(models.Candidate).filter(
+        models.Candidate.id == request.candidate_id,
+        models.Candidate.company_id == current_user.company_id
+    ).first()
+    
+    if not candidate:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Candidate not found"
+        )
+    
+    try:
+        # Get authenticity service
+        authenticity_service = get_authenticity_service()
+        
+        # Analyze the raw profile text
+        text_to_analyze = candidate.raw_profile
+        
+        # Run analysis
+        result = await authenticity_service.analyze_text(text_to_analyze, use_llm=True)
+        
+        # Check if flag already exists
+        existing_flag = db.query(models.AuthenticityFlag).filter(
+            models.AuthenticityFlag.candidate_id == request.candidate_id
+        ).first()
+        
+        if existing_flag:
+            # Update existing flag
+            existing_flag.is_suspicious = result.is_suspicious
+            existing_flag.risk_score = result.risk_score
+            existing_flag.reason = result.reason
+            db.commit()
+            db.refresh(existing_flag)
+            flag_id = existing_flag.id
+        else:
+            # Create new flag
+            new_flag = models.AuthenticityFlag(
+                candidate_id=request.candidate_id,
+                is_suspicious=result.is_suspicious,
+                risk_score=result.risk_score,
+                reason=result.reason
+            )
+            db.add(new_flag)
+            db.commit()
+            db.refresh(new_flag)
+            flag_id = new_flag.id
+        
+        return AuthenticityCheckResponse(
+            candidate_id=request.candidate_id,
+            is_suspicious=result.is_suspicious,
+            risk_score=result.risk_score,
+            reason=result.reason,
+            flag_id=flag_id
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error checking authenticity: {str(e)}"
+        )
 
