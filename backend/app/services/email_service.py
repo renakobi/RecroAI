@@ -73,8 +73,15 @@ class EmailService:
             return True
             
         except Exception as e:
-            print(f"Error sending email: {str(e)}")
+            error_msg = str(e)
+            print(f"Error sending email: {error_msg}")
+            # Store error for better error reporting
+            self._last_error = error_msg
             return False
+    
+    def get_last_error(self) -> Optional[str]:
+        """Get the last error message"""
+        return getattr(self, '_last_error', None)
     
     def send_interview_email(
         self,

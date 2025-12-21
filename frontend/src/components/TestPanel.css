@@ -1,0 +1,286 @@
+.test-panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.test-panel-content {
+  background: #1a1a1a;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.test-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.test-panel-header h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 20px;
+}
+
+.test-panel-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 28px;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.test-panel-close:hover {
+  background: #333;
+  color: #fff;
+}
+
+.test-panel-tabs {
+  display: flex;
+  border-bottom: 1px solid #333;
+  background: #222;
+}
+
+.test-panel-tab {
+  flex: 1;
+  padding: 12px 20px;
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.test-panel-tab:hover {
+  color: #fff;
+  background: #2a2a2a;
+}
+
+.test-panel-tab.active {
+  color: #4a9eff;
+  border-bottom-color: #4a9eff;
+  background: #1a1a1a;
+}
+
+.test-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.test-panel-section h3 {
+  margin: 0 0 16px 0;
+  color: #fff;
+  font-size: 16px;
+}
+
+.quick-jobs,
+.quick-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.quick-job-btn {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #fff;
+}
+
+.quick-job-btn:hover:not(:disabled) {
+  background: #333;
+  border-color: #4a9eff;
+}
+
+.quick-job-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quick-job-btn strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #4a9eff;
+}
+
+.quick-job-btn span {
+  display: block;
+  font-size: 12px;
+  color: #999;
+}
+
+.quick-candidate-btn {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #fff;
+}
+
+.quick-candidate-btn:hover:not(:disabled) {
+  background: #333;
+  border-color: #4a9eff;
+}
+
+.quick-candidate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quick-candidate-btn strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #4a9eff;
+}
+
+.quick-candidate-desc {
+  display: block;
+  font-size: 12px;
+  color: #999;
+}
+
+.test-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.test-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.test-form-group label {
+  color: #ccc;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.test-form-group input,
+.test-form-group textarea {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.test-form-group input:focus,
+.test-form-group textarea:focus {
+  outline: none;
+  border-color: #4a9eff;
+}
+
+.test-form-group textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.test-form-submit {
+  background: #4a9eff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 8px;
+}
+
+.test-form-submit:hover:not(:disabled) {
+  background: #3a8eef;
+}
+
+.test-form-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scoring-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.scoring-action-btn {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 14px 20px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.scoring-action-btn.primary {
+  background: #4a9eff;
+  border-color: #4a9eff;
+}
+
+.scoring-action-btn.primary:hover:not(:disabled) {
+  background: #3a8eef;
+}
+
+.scoring-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scoring-hint {
+  color: #999;
+  font-size: 13px;
+  margin: 0;
+}
+
+.scoring-hint strong {
+  color: #fff;
+}
+
+.test-panel-info {
+  color: #999;
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
+}
+

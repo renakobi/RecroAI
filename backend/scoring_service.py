@@ -1,9 +1,8 @@
 import json
 from typing import Dict, Any
-
-from .openai_client import get_client, get_model
-from .prompts import SCORING_SYSTEM_PROMPT
-from .llm_validation import validate_scoring_payload
+from app.services.openai_client import get_client, get_model
+from app.services.prompts import SCORING_SYSTEM_PROMPT
+from app.services.llm_validation import validate_scoring_payload
 
 
 def score_candidate(job_criteria: dict, candidate_profile: str) -> Dict[str, Any]:
@@ -63,13 +62,13 @@ Rules:
     )
 
     raw = response.choices[0].message.content.strip()
-    
-    # Defensive cleanup for OpenRouter / free models (may return markdown code blocks)
+
+# Defensive cleanup for free models
     if raw.startswith("```"):
         raw = raw.strip("```").replace("json", "").strip()
-    if raw.startswith("`"):
-        raw = raw.strip("`").strip()
 
     data = json.loads(raw)
+
+
     validate_scoring_payload(data)
     return data

@@ -10,12 +10,39 @@
   padding: 24px 32px;
   border-bottom: 1px solid #3a3a3a;
   background-color: #252525;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
 }
 
 .dashboard-title-section {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
+}
+
+.score-candidates-button {
+  background: #4caf50;
+  border: 1px solid #4caf50;
+  border-radius: 6px;
+  padding: 8px 16px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.score-candidates-button:hover:not(:disabled) {
+  background: #45a049;
+  border-color: #45a049;
+}
+
+.score-candidates-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .dashboard-title {

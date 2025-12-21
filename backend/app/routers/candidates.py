@@ -9,7 +9,7 @@ from ..auth import get_current_active_user
 from ..database import get_db
 from ..schemas import CandidateResponse, CSVUploadResponse, LinkedInProfileCreate, CandidateCreateResponse, AuthenticityCheckRequest, AuthenticityCheckResponse
 from ..services.linkedin_service import create_candidate_from_linkedin
-from ..services.authenticity_service import get_authenticity_service
+from ..services.authenticity_service import detect_authenticity
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -176,6 +176,40 @@ def get_candidate(
     return candidate
 
 
+@router.delete("/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_candidate(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Delete a candidate by ID (only if belongs to user's company)"""
+    candidate = db.query(models.Candidate).filter(
+        models.Candidate.id == candidate_id,
+        models.Candidate.company_id == current_user.company_id
+    ).first()
+    
+    if candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Candidate not found"
+        )
+    
+    # Delete related records first (scores, authenticity flags)
+    db.query(models.CandidateScore).filter(
+        models.CandidateScore.candidate_id == candidate_id
+    ).delete()
+    
+    db.query(models.AuthenticityFlag).filter(
+        models.AuthenticityFlag.candidate_id == candidate_id
+    ).delete()
+    
+    # Delete the candidate
+    db.delete(candidate)
+    db.commit()
+    
+    return None
+
+
 @router.post("/from-linkedin", response_model=CandidateCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_candidate_from_linkedin_profile(
     request: LinkedInProfileCreate,
@@ -258,14 +292,15 @@ async def check_candidate_authenticity(
         )
     
     try:
-        # Get authenticity service
-        authenticity_service = get_authenticity_service()
-        
         # Analyze the raw profile text
         text_to_analyze = candidate.raw_profile
         
-        # Run analysis
-        result = await authenticity_service.analyze_text(text_to_analyze, use_llm=True)
+        # Run analysis (synchronous call)
+        try:
+            result = detect_authenticity(text_to_analyze, use_llm=True)
+        except ValueError:
+            # If API key is not configured, use heuristic only
+            result = detect_authenticity(text_to_analyze, use_llm=False)
         
         # Check if flag already exists
         existing_flag = db.query(models.AuthenticityFlag).filter(
@@ -274,9 +309,9 @@ async def check_candidate_authenticity(
         
         if existing_flag:
             # Update existing flag
-            existing_flag.is_suspicious = result.is_suspicious
-            existing_flag.risk_score = result.risk_score
-            existing_flag.reason = result.reason
+            existing_flag.is_suspicious = result["is_suspicious"]
+            existing_flag.risk_score = result["risk_score"]
+            existing_flag.reason = result["reason"]
             db.commit()
             db.refresh(existing_flag)
             flag_id = existing_flag.id
@@ -284,9 +319,9 @@ async def check_candidate_authenticity(
             # Create new flag
             new_flag = models.AuthenticityFlag(
                 candidate_id=request.candidate_id,
-                is_suspicious=result.is_suspicious,
-                risk_score=result.risk_score,
-                reason=result.reason
+                is_suspicious=result["is_suspicious"],
+                risk_score=result["risk_score"],
+                reason=result["reason"]
             )
             db.add(new_flag)
             db.commit()
@@ -295,9 +330,9 @@ async def check_candidate_authenticity(
         
         return AuthenticityCheckResponse(
             candidate_id=request.candidate_id,
-            is_suspicious=result.is_suspicious,
-            risk_score=result.risk_score,
-            reason=result.reason,
+            is_suspicious=result["is_suspicious"],
+            risk_score=result["risk_score"],
+            reason=result["reason"],
             flag_id=flag_id
         )
         

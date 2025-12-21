@@ -9,7 +9,7 @@ function SuspiciousFlag({ isSuspicious, riskScore }) {
     const riskLevel = riskScore >= 0.7 ? 'high' : riskScore >= 0.4 ? 'medium' : 'low'
     return (
       <div className={`flag-flag flag-${riskLevel}`}>
-        <span className="flag-icon">⚠️</span>
+        <span className="flag-icon">!</span>
         <span className="flag-text">Suspicious</span>
       </div>
     )

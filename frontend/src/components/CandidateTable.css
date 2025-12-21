@@ -43,20 +43,29 @@
   vertical-align: top;
 }
 
-.col-name {
-  width: 25%;
+.col-expand {
+  width: 40px;
+  text-align: center;
 }
 
-.col-score {
+.col-name {
   width: 20%;
 }
 
+.col-score {
+  width: 15%;
+}
+
 .col-categories {
-  width: 40%;
+  width: 30%;
 }
 
 .col-status {
   width: 15%;
+}
+
+.col-actions {
+  width: 20%;
 }
 
 .candidate-info {
@@ -120,5 +129,141 @@
   justify-content: center;
   padding: 48px;
   color: #8a8a8a;
+}
+
+.expand-button {
+  background: none;
+  border: none;
+  color: #8a8a8a;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 4px;
+  transition: color 0.15s ease;
+}
+
+.expand-button:hover {
+  color: #ffffff;
+}
+
+.expanded-row {
+  background-color: #2a2a2a;
+}
+
+.expanded-content {
+  padding: 20px 16px;
+}
+
+.explanation-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.explanation-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8a8a8a;
+}
+
+.explanation-text {
+  color: #ccc;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.category-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.category-detail-item {
+  padding: 12px;
+  background-color: #252525;
+  border-radius: 4px;
+  border-left: 3px solid #4caf50;
+}
+
+.category-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.category-detail-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  text-transform: capitalize;
+}
+
+.category-detail-score {
+  font-size: 14px;
+  font-weight: 600;
+  color: #4caf50;
+}
+
+.category-detail-reasoning {
+  font-size: 12px;
+  color: #aaa;
+  line-height: 1.5;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.action-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.action-interview {
+  background-color: #4caf50;
+  color: #fff;
+}
+
+.action-interview:hover {
+  background-color: #45a049;
+}
+
+.action-rejection {
+  background-color: #555;
+  color: #fff;
+}
+
+.action-rejection:hover {
+  background-color: #666;
+}
+
+.action-view-cv {
+  background-color: #6a5acd;
+  color: #fff;
+}
+
+.action-view-cv:hover {
+  background-color: #5a4abd;
+}
+
+.action-delete {
+  background-color: #ff4444;
+  color: #fff;
+}
+
+.action-delete:hover {
+  background-color: #cc0000;
 }
 

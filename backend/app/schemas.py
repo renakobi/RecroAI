@@ -22,10 +22,15 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     is_superuser: bool
+    sender_email: Optional[str] = None
     created_at: datetime
     
     class Config:
         from_attributes = True
+
+
+class SenderEmailUpdate(BaseModel):
+    sender_email: EmailStr
 
 
 class Token(BaseModel):
@@ -91,8 +96,6 @@ class ScoringResponseSchema(BaseModel):
     total_score: float
     category_scores: Dict[str, CategoryScoreSchema]
     explanation: str
-    strengths: List[str]
-    weaknesses: List[str]
 
 
 class ScoringResultResponse(BaseModel):
@@ -129,6 +132,8 @@ class CandidateWithScore(BaseModel):
     risk_score: Optional[float] = None
     score_id: Optional[int] = None
     flag_id: Optional[int] = None
+    raw_profile: Optional[str] = None  # For filtering
+    explanation: Optional[str] = None  # Scoring explanation
 
 
 class BulkScoringRequest(BaseModel):

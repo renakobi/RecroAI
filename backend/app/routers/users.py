@@ -35,3 +35,15 @@ def get_user(
         )
     return user
 
+
+@router.patch("/me/sender-email", response_model=schemas.UserResponse)
+def update_sender_email(
+    email_update: schemas.SenderEmailUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Update the sender email for the current user"""
+    current_user.sender_email = email_update.sender_email
+    db.commit()
+    db.refresh(current_user)
+    return current_user

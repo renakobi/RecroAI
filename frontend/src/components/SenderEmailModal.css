@@ -1,0 +1,110 @@
+.sender-email-modal-content {
+  max-width: 500px;
+}
+
+.sender-email-form {
+  padding: 24px;
+}
+
+.form-info {
+  margin-bottom: 20px;
+  padding: 12px;
+  background-color: #2a2a2a;
+  border-radius: 4px;
+  border-left: 3px solid #4caf50;
+}
+
+.form-info p {
+  margin: 0;
+  color: #ccc;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #ccc;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  background-color: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #4caf50;
+}
+
+.form-group input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.form-error {
+  margin-top: 6px;
+  color: #ff4444;
+  font-size: 12px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #333;
+}
+
+.form-actions button {
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.form-actions button[type="button"] {
+  background-color: #333;
+  color: #ccc;
+}
+
+.form-actions button[type="button"]:hover:not(:disabled) {
+  background-color: #444;
+  color: #fff;
+}
+
+.form-actions button[type="submit"] {
+  background-color: #4caf50;
+  color: #fff;
+}
+
+.form-actions button[type="submit"]:hover:not(:disabled) {
+  background-color: #45a049;
+}
+
+.form-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+
+
+
+

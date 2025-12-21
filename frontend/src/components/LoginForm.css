@@ -120,3 +120,23 @@
   color: #6a6a6a;
 }
 
+.link-button {
+  background: none;
+  border: none;
+  color: #4caf50;
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0;
+  margin: 0;
+}
+
+.link-button:hover {
+  color: #45a049;
+}
+
+.link-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

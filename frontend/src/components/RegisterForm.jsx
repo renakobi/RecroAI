@@ -1,21 +1,34 @@
 import { useState } from 'react'
 import './LoginForm.css'
 
-function LoginForm({ onLogin, onShowRegister }) {
+function RegisterForm({ onRegister, onBackToLogin }) {
+  const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters')
+      return
+    }
+
     setLoading(true)
 
     try {
-      await onLogin(username, password)
+      await onRegister(email, username, password)
     } catch (err) {
-      setError(err.message || 'Login failed')
+      setError(err.response?.data?.detail || err.message || 'Registration failed')
     } finally {
       setLoading(false)
     }
@@ -25,11 +38,24 @@ function LoginForm({ onLogin, onShowRegister }) {
     <div className="login-container">
       <div className="login-box">
         <h1 className="login-title">RecroAI</h1>
-        <p className="login-subtitle">Sign in to continue</p>
+        <p className="login-subtitle">Create your account</p>
         
         <form onSubmit={handleSubmit} className="login-form">
           {error && <div className="login-error">{error}</div>}
           
+          <div className="form-group">
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={loading}
+              placeholder="Enter your email"
+            />
+          </div>
+
           <div className="form-group">
             <label htmlFor="username">Username</label>
             <input
@@ -39,7 +65,7 @@ function LoginForm({ onLogin, onShowRegister }) {
               onChange={(e) => setUsername(e.target.value)}
               required
               disabled={loading}
-              placeholder="Enter your username"
+              placeholder="Choose a username"
             />
           </div>
 
@@ -52,7 +78,22 @@ function LoginForm({ onLogin, onShowRegister }) {
               onChange={(e) => setPassword(e.target.value)}
               required
               disabled={loading}
-              placeholder="Enter your password"
+              placeholder="Enter your password (min 6 characters)"
+              minLength={6}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="confirmPassword">Confirm Password</label>
+            <input
+              id="confirmPassword"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              disabled={loading}
+              placeholder="Confirm your password"
+              minLength={6}
             />
           </div>
 
@@ -61,20 +102,20 @@ function LoginForm({ onLogin, onShowRegister }) {
             className="login-button"
             disabled={loading}
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>
 
         <div className="login-footer">
           <p>
-            Don't have an account?{' '}
+            Already have an account?{' '}
             <button 
               type="button"
               className="link-button"
-              onClick={onShowRegister}
+              onClick={onBackToLogin}
               disabled={loading}
             >
-              Create account
+              Sign in
             </button>
           </p>
         </div>
@@ -83,5 +124,5 @@ function LoginForm({ onLogin, onShowRegister }) {
   )
 }
 
-export default LoginForm
+export default RegisterForm
 

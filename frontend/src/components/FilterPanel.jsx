@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import './FilterPanel.css'
 
-function FilterPanel({ filters, onFilterChange, universities, companies, loading = false }) {
+function FilterPanel({ filters, onFilterChange, universities, companies, loading = false, onAddUniversity, onAddCompany }) {
+  const [newUniversity, setNewUniversity] = useState('')
+  const [newCompany, setNewCompany] = useState('')
   const handleUniversityChange = (e) => {
     const value = e.target.value
     onFilterChange({
@@ -33,16 +36,59 @@ function FilterPanel({ filters, onFilterChange, universities, companies, loading
     })
   }
 
+  const handleMinScoreChange = (e) => {
+    const value = e.target.value === '' ? null : parseInt(e.target.value)
+    onFilterChange({
+      ...filters,
+      minScore: value,
+    })
+  }
+
+  const handleMaxScoreChange = (e) => {
+    const value = e.target.value === '' ? null : parseInt(e.target.value)
+    onFilterChange({
+      ...filters,
+      maxScore: value,
+    })
+  }
+
+  const handleAuthenticityChange = (e) => {
+    const value = e.target.value
+    onFilterChange({
+      ...filters,
+      authenticity: value === 'all' ? null : value,
+    })
+  }
+
   const clearFilters = () => {
     onFilterChange({
       university: null,
       universityMatchType: 'exact',
       company: null,
       minExperience: null,
+      minScore: null,
+      maxScore: null,
+      authenticity: null,
     })
   }
 
-  const hasActiveFilters = filters.university || filters.company || filters.minExperience
+  const handleAddUniversity = (e) => {
+    e.preventDefault()
+    if (newUniversity.trim() && onAddUniversity) {
+      onAddUniversity(newUniversity.trim())
+      setNewUniversity('')
+    }
+  }
+
+  const handleAddCompany = (e) => {
+    e.preventDefault()
+    if (newCompany.trim() && onAddCompany) {
+      onAddCompany(newCompany.trim())
+      setNewCompany('')
+    }
+  }
+
+  const hasActiveFilters = filters.university || filters.company || filters.minExperience !== null || filters.minScore !== null || filters.maxScore !== null || filters.authenticity
 
   return (
     <div className="filter-panel">
@@ -84,6 +130,21 @@ function FilterPanel({ filters, onFilterChange, universities, companies, loading
             <option value="close">Close Match</option>
           </select>
         )}
+        {onAddUniversity && (
+          <form className="filter-add-form" onSubmit={handleAddUniversity}>
+            <input
+              type="text"
+              className="filter-add-input"
+              placeholder="Add university..."
+              value={newUniversity}
+              onChange={(e) => setNewUniversity(e.target.value)}
+              disabled={loading}
+            />
+            <button type="submit" className="filter-add-btn" disabled={loading || !newUniversity.trim()}>
+              +
+            </button>
+          </form>
+        )}
       </div>
 
       <div className="filter-group">
@@ -105,6 +166,21 @@ function FilterPanel({ filters, onFilterChange, universities, companies, loading
             ))
           )}
         </select>
+        {onAddCompany && (
+          <form className="filter-add-form" onSubmit={handleAddCompany}>
+            <input
+              type="text"
+              className="filter-add-input"
+              placeholder="Add company..."
+              value={newCompany}
+              onChange={(e) => setNewCompany(e.target.value)}
+              disabled={loading}
+            />
+            <button type="submit" className="filter-add-btn" disabled={loading || !newCompany.trim()}>
+              +
+            </button>
+          </form>
+        )}
       </div>
 
       <div className="filter-group">
@@ -118,6 +194,49 @@ function FilterPanel({ filters, onFilterChange, universities, companies, loading
           value={filters.minExperience || ''}
           onChange={handleMinExperienceChange}
         />
+      </div>
+
+      <div className="filter-group">
+        <label className="filter-label">Score Range</label>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input
+            type="number"
+            className="filter-input"
+            min="0"
+            max="100"
+            step="1"
+            placeholder="Min"
+            value={filters.minScore || ''}
+            onChange={handleMinScoreChange}
+            style={{ flex: 1 }}
+          />
+          <span style={{ color: '#8a8a8a', fontSize: '18px' }}>-</span>
+          <input
+            type="number"
+            className="filter-input"
+            min="0"
+            max="100"
+            step="1"
+            placeholder="Max"
+            value={filters.maxScore || ''}
+            onChange={handleMaxScoreChange}
+            style={{ flex: 1 }}
+          />
+        </div>
+      </div>
+
+      <div className="filter-group">
+        <label className="filter-label">Authenticity</label>
+        <select
+          className="filter-select"
+          value={filters.authenticity || 'all'}
+          onChange={handleAuthenticityChange}
+          disabled={loading}
+        >
+          <option value="all">All</option>
+          <option value="clean">Clean Only</option>
+          <option value="suspicious">Suspicious Only</option>
+        </select>
       </div>
     </div>
   )

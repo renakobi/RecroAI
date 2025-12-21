@@ -94,9 +94,15 @@ async def send_interview_email_endpoint(
         )
         
         if not success:
+            error_detail = email_service.get_last_error() or "Failed to send email"
+            # Provide helpful error message if SMTP is not configured
+            if "login" in error_detail.lower() or "authentication" in error_detail.lower():
+                error_detail = "SMTP authentication failed. Please check SMTP_USERNAME and SMTP_PASSWORD in environment variables."
+            elif "connection" in error_detail.lower() or "refused" in error_detail.lower():
+                error_detail = "Could not connect to SMTP server. Please check SMTP_HOST and SMTP_PORT in environment variables."
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to send email"
+                detail=error_detail
             )
         
         # Log email
@@ -188,9 +194,15 @@ async def send_rejection_email_endpoint(
         )
         
         if not success:
+            error_detail = email_service.get_last_error() or "Failed to send email"
+            # Provide helpful error message if SMTP is not configured
+            if "login" in error_detail.lower() or "authentication" in error_detail.lower():
+                error_detail = "SMTP authentication failed. Please check SMTP_USERNAME and SMTP_PASSWORD in environment variables."
+            elif "connection" in error_detail.lower() or "refused" in error_detail.lower():
+                error_detail = "Could not connect to SMTP server. Please check SMTP_HOST and SMTP_PORT in environment variables."
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to send email"
+                detail=error_detail
             )
         
         # Log email

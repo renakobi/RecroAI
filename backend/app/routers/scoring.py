@@ -1,409 +1,415 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+import json
+
 from .. import models
 from ..auth import get_current_active_user
 from ..database import get_db
 from ..schemas import (
-    ScoringRequest, ScoringResultResponse, CategoryScoreSchema,
-    BulkScoringRequest, BulkScoringResponse, CandidateWithScore
+    ScoringRequest,
+    ScoringResultResponse,
+    CategoryScoreSchema,
+    BulkScoringRequest,
+    BulkScoringResponse,
+    CandidateWithScore,
 )
-from ..services.scoring_service import get_scoring_service
-from ..services.authenticity_service import get_authenticity_service
-import json
+
+from ..services.scoring_service import score_candidate
+from ..services.authenticity_service import detect_authenticity
+
 
 router = APIRouter(prefix="/scoring", tags=["scoring"])
 
 
+@router.get("/candidates/{job_id}", response_model=BulkScoringResponse)
+def get_candidates_with_scores(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Get candidates with existing scores for a job (NO scoring, just fetch from DB)"""
+    job = db.query(models.Job).filter(
+        models.Job.id == job_id,
+        models.Job.company_id == current_user.company_id,
+    ).first()
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    candidates = db.query(models.Candidate).filter(
+        models.Candidate.company_id == current_user.company_id
+    ).all()
+
+    if not candidates:
+        return BulkScoringResponse(
+            message="No candidates found",
+            job_id=job_id,
+            candidates_scored=0,
+            candidates_checked=0,
+            candidates=[],
+        )
+
+    results = []
+    checked = 0
+
+    for candidate in candidates:
+        candidate_data = {
+            "candidate_id": candidate.id,
+            "name": candidate.name,
+            "email": candidate.email,
+            "raw_profile": candidate.raw_profile,
+        }
+
+        # Get existing authenticity flag (no LLM call)
+        existing_flag = db.query(models.AuthenticityFlag).filter(
+            models.AuthenticityFlag.candidate_id == candidate.id
+        ).first()
+        
+        if existing_flag:
+            candidate_data["is_suspicious"] = existing_flag.is_suspicious
+            candidate_data["risk_score"] = existing_flag.risk_score
+            candidate_data["flag_id"] = existing_flag.id
+            checked += 1
+        else:
+            candidate_data["is_suspicious"] = None
+            candidate_data["risk_score"] = None
+            candidate_data["flag_id"] = None
+
+        # Get existing score (no LLM call)
+        existing_score = db.query(models.CandidateScore).filter(
+            models.CandidateScore.candidate_id == candidate.id,
+            models.CandidateScore.job_id == job.id,
+        ).first()
+
+        if existing_score and existing_score.total_score is not None:
+            candidate_data["total_score"] = float(existing_score.total_score)
+            if existing_score.category_scores:
+                candidate_data["category_scores"] = {
+                    k: CategoryScoreSchema(
+                        score=float(v) if isinstance(v, (int, float)) else float(v.get("score", 0)) if isinstance(v, dict) else 0,
+                        reasoning=""
+                    )
+                    for k, v in existing_score.category_scores.items()
+                }
+            else:
+                candidate_data["category_scores"] = None
+            candidate_data["score_id"] = existing_score.id
+            candidate_data["explanation"] = existing_score.explanation
+        else:
+            candidate_data["total_score"] = None
+            candidate_data["category_scores"] = None
+            candidate_data["score_id"] = None
+            candidate_data["explanation"] = None
+
+        results.append(CandidateWithScore(**candidate_data))
+
+    results.sort(key=lambda c: c.total_score or 0, reverse=True)
+
+    scored_count = sum(1 for r in results if r.total_score is not None)
+    
+    return BulkScoringResponse(
+        message=f"Retrieved {len(candidates)} candidates ({scored_count} with scores)",
+        job_id=job.id,
+        candidates_scored=scored_count,
+        candidates_checked=checked,
+        candidates=results,
+    )
+
+
 @router.post("/score", response_model=ScoringResultResponse, status_code=status.HTTP_201_CREATED)
-async def score_candidate(
+async def score_single_candidate(
     request: ScoringRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    # Verify candidate
+    candidate = db.query(models.Candidate).filter(
+        models.Candidate.id == request.candidate_id,
+        models.Candidate.company_id == current_user.company_id,
+    ).first()
+
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    # Verify job
+    job = db.query(models.Job).filter(
+        models.Job.id == request.job_id,
+        models.Job.company_id == current_user.company_id,
+    ).first()
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Prevent duplicate scoring
+    if db.query(models.CandidateScore).filter(
+        models.CandidateScore.candidate_id == request.candidate_id,
+        models.CandidateScore.job_id == request.job_id,
+    ).first():
+        raise HTTPException(status_code=400, detail="Score already exists")
+
+    # Parse job criteria
+    job_criteria = job.criteria_json if isinstance(job.criteria_json, dict) else json.loads(job.criteria_json)
+    
+    # Parse candidate profile
+    if isinstance(candidate.raw_profile, str):
+        try:
+            candidate_profile_data = json.loads(candidate.raw_profile)
+            candidate_profile = json.dumps(candidate_profile_data, indent=2)
+        except json.JSONDecodeError:
+            candidate_profile = candidate.raw_profile
+    else:
+        candidate_profile = json.dumps(candidate.raw_profile, indent=2)
+
+    try:
+        # Synchronous call - no await (OpenAI SDK is synchronous)
+        result = score_candidate(
+            job_criteria=job_criteria,
+            candidate_profile=candidate_profile,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scoring error: {str(e)}")
+
+    score = models.CandidateScore(
+        candidate_id=candidate.id,
+        job_id=job.id,
+        total_score=result["total_score"],
+        category_scores=result["category_scores"],
+        explanation=result["explanation"],
+    )
+
+    db.add(score)
+    db.commit()
+    db.refresh(score)
+
+    return ScoringResultResponse(
+        message="Candidate scored successfully",
+        score_id=score.id,
+        total_score=score.total_score,
+        category_scores={
+            k: CategoryScoreSchema(score=v, reasoning="")
+            for k, v in score.category_scores.items()
+        },
+        explanation=score.explanation,
+    )
+
+
+@router.post("/score-all", response_model=BulkScoringResponse)
+async def score_all_candidates_for_job(
+    request: BulkScoringRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    job = db.query(models.Job).filter(
+        models.Job.id == request.job_id,
+        models.Job.company_id == current_user.company_id,
+    ).first()
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    candidates = db.query(models.Candidate).filter(
+        models.Candidate.company_id == current_user.company_id
+    ).all()
+
+    if not candidates:
+        raise HTTPException(status_code=404, detail="No candidates found")
+    
+    # Safety limit: Don't score more than 4 candidates at once to prevent excessive token usage
+    MAX_CANDIDATES_TO_SCORE = 4
+    if len(candidates) > MAX_CANDIDATES_TO_SCORE:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Too many candidates ({len(candidates)}). Maximum {MAX_CANDIDATES_TO_SCORE} candidates can be scored at once. Please filter your candidates first."
+        )
+
+    job_criteria = job.criteria_json if isinstance(job.criteria_json, dict) else json.loads(job.criteria_json)
+
+    results = []
+    scored = 0
+    checked = 0
+    errors = []
+    total_candidates = len(candidates)
+
+    for idx, candidate in enumerate(candidates, 1):
+        candidate_data = {
+            "candidate_id": candidate.id,
+            "name": candidate.name,
+            "email": candidate.email,
+            "raw_profile": candidate.raw_profile,  # Include for filtering
+        }
+
+        # Check authenticity
+        try:
+            profile_text = candidate.raw_profile
+            if isinstance(profile_text, str):
+                text_to_analyze = profile_text
+            else:
+                text_to_analyze = json.dumps(profile_text, indent=2)
+            
+            try:
+                auth = detect_authenticity(text_to_analyze, use_llm=True)
+            except ValueError:
+                # LLM not configured, use heuristic only
+                auth = detect_authenticity(text_to_analyze, use_llm=False)
+            
+            # Create/update authenticity flag
+            existing_flag = db.query(models.AuthenticityFlag).filter(
+                models.AuthenticityFlag.candidate_id == candidate.id
+            ).first()
+            
+            if existing_flag:
+                existing_flag.is_suspicious = auth["is_suspicious"]
+                existing_flag.risk_score = auth["risk_score"]
+                existing_flag.reason = auth["reason"]
+                flag_id = existing_flag.id
+            else:
+                new_flag = models.AuthenticityFlag(
+                    candidate_id=candidate.id,
+                    is_suspicious=auth["is_suspicious"],
+                    risk_score=auth["risk_score"],
+                    reason=auth["reason"]
+                )
+                db.add(new_flag)
+                db.flush()
+                flag_id = new_flag.id
+            
+            candidate_data["is_suspicious"] = auth["is_suspicious"]
+            candidate_data["risk_score"] = auth["risk_score"]
+            candidate_data["flag_id"] = flag_id
+            checked += 1
+        except Exception as e:
+            errors.append(f"Authenticity check failed for candidate {candidate.id}: {str(e)}")
+            candidate_data["is_suspicious"] = None
+            candidate_data["risk_score"] = None
+            candidate_data["flag_id"] = None
+
+        # Score candidate
+        existing_score = db.query(models.CandidateScore).filter(
+            models.CandidateScore.candidate_id == candidate.id,
+            models.CandidateScore.job_id == job.id,
+        ).first()
+
+        if existing_score and existing_score.total_score is not None:
+            # Use existing score - NO LLM CALL
+            score = existing_score
+        else:
+            # Only score if no valid score exists
+            if existing_score and existing_score.total_score is None:
+                db.delete(existing_score)
+                db.flush()
+        
+        if not existing_score or existing_score.total_score is None:
+            try:
+                # Parse candidate profile for scoring
+                if isinstance(candidate.raw_profile, str):
+                    try:
+                        candidate_profile_data = json.loads(candidate.raw_profile)
+                        candidate_profile = json.dumps(candidate_profile_data, indent=2)
+                    except json.JSONDecodeError:
+                        candidate_profile = candidate.raw_profile
+                else:
+                    candidate_profile = json.dumps(candidate.raw_profile, indent=2)
+                
+                try:
+                    result = score_candidate(job_criteria, candidate_profile)
+                except Exception as llm_error:
+                    raise
+                
+                score = models.CandidateScore(
+                    candidate_id=candidate.id,
+                    job_id=job.id,
+                    total_score=float(result["total_score"]),
+                    category_scores=result.get("category_scores", {}),
+                    explanation=result.get("explanation", ""),
+                )
+                db.add(score)
+                db.flush()
+                
+                db.refresh(score)
+                scored += 1
+            except ValueError as e:
+                # LLM configuration error
+                error_msg = f"LLM not configured for candidate {candidate.id}: {str(e)}"
+                errors.append(error_msg)
+                candidate_data["total_score"] = None
+                candidate_data["category_scores"] = None
+                candidate_data["score_id"] = None
+                candidate_data["explanation"] = None
+                results.append(CandidateWithScore(**candidate_data))
+                continue
+            except Exception as e:
+                # Other scoring errors
+                error_msg = f"Scoring failed for candidate {candidate.id}: {str(e)}"
+                errors.append(error_msg)
+                candidate_data["total_score"] = None
+                candidate_data["category_scores"] = None
+                candidate_data["score_id"] = None
+                candidate_data["explanation"] = None
+                results.append(CandidateWithScore(**candidate_data))
+                continue
+
+        candidate_data["total_score"] = float(score.total_score) if score.total_score is not None else None
+        # Convert category_scores to CategoryScoreSchema format
+        if score.category_scores:
+            candidate_data["category_scores"] = {
+                k: CategoryScoreSchema(
+                    score=float(v) if isinstance(v, (int, float)) else float(v.get("score", 0)) if isinstance(v, dict) else 0,
+                    reasoning=""
+                )
+                for k, v in score.category_scores.items()
+            }
+        else:
+            candidate_data["category_scores"] = None
+        candidate_data["score_id"] = score.id
+        candidate_data["explanation"] = score.explanation
+
+        results.append(CandidateWithScore(**candidate_data))
+
+    db.commit()
+
+    results.sort(key=lambda c: c.total_score or 0, reverse=True)
+
+    message = f"Processed {len(candidates)} candidates | Scored {scored} new | Checked {checked} authenticity"
+    if errors:
+        message += f" | {len(errors)} errors occurred"
+
+    # Log summary for debugging
+    
+    response = BulkScoringResponse(
+        message=message,
+        job_id=job.id,
+        candidates_scored=scored,
+        candidates_checked=checked,
+        candidates=results,
+    )
+    
+    return response
+
+
+@router.delete("/score/{score_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_score(
+    score_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    """
-    Score a candidate against a job using LLM.
-    
-    Returns structured scores and explanation. All output is validated JSON.
-    """
-    # Verify candidate belongs to user's company
-    candidate = db.query(models.Candidate).filter(
-        models.Candidate.id == request.candidate_id,
+    """Delete a candidate score by ID (only if belongs to user's company)"""
+    score = db.query(models.CandidateScore).join(
+        models.Candidate
+    ).filter(
+        models.CandidateScore.id == score_id,
         models.Candidate.company_id == current_user.company_id
     ).first()
     
-    if not candidate:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Candidate not found"
-        )
-    
-    # Verify job belongs to user's company
-    job = db.query(models.Job).filter(
-        models.Job.id == request.job_id,
-        models.Job.company_id == current_user.company_id
-    ).first()
-    
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found"
-        )
-    
-    # Check if score already exists
-    existing_score = db.query(models.CandidateScore).filter(
-        models.CandidateScore.candidate_id == request.candidate_id,
-        models.CandidateScore.job_id == request.job_id
-    ).first()
-    
-    if existing_score:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Score already exists for this candidate-job pair"
-        )
-    
-    try:
-        # Get scoring service
-        scoring_service = get_scoring_service()
-        
-        # Parse job criteria JSON
-        if isinstance(job.criteria_json, str):
-            job_criteria = json.loads(job.criteria_json)
-        else:
-            job_criteria = job.criteria_json
-        
-        # Parse candidate raw profile
-        if isinstance(candidate.raw_profile, str):
-            try:
-                candidate_profile_data = json.loads(candidate.raw_profile)
-                # Convert back to readable string for LLM
-                candidate_profile = json.dumps(candidate_profile_data, indent=2)
-            except json.JSONDecodeError:
-                # If not JSON, use as-is
-                candidate_profile = candidate.raw_profile
-        else:
-            candidate_profile = json.dumps(candidate.raw_profile, indent=2)
-        
-        # Get LLM scoring (structured JSON only)
-        scoring_result = await scoring_service.score_candidate(
-            job_criteria=job_criteria,
-            candidate_profile=candidate_profile
-        )
-        
-        # Convert category scores to dict format for storage
-        category_scores_dict = {
-            category: {
-                "score": score.score,
-                "reasoning": score.reasoning
-            }
-            for category, score in scoring_result.category_scores.items()
-        }
-        
-        # Create explanation combining explanation, strengths, and weaknesses
-        explanation_parts = [scoring_result.explanation]
-        if scoring_result.strengths:
-            explanation_parts.append(f"\n\nStrengths: {', '.join(scoring_result.strengths)}")
-        if scoring_result.weaknesses:
-            explanation_parts.append(f"\n\nWeaknesses: {', '.join(scoring_result.weaknesses)}")
-        full_explanation = "\n".join(explanation_parts)
-        
-        # Save score to database
-        candidate_score = models.CandidateScore(
-            candidate_id=request.candidate_id,
-            job_id=request.job_id,
-            total_score=scoring_result.total_score,
-            category_scores=category_scores_dict,
-            explanation=full_explanation
-        )
-        
-        db.add(candidate_score)
-        db.commit()
-        db.refresh(candidate_score)
-        
-        # Return structured response
-        return ScoringResultResponse(
-            message="Candidate scored successfully",
-            score_id=candidate_score.id,
-            total_score=candidate_score.total_score,
-            category_scores={
-                cat: CategoryScoreSchema(**score_data)
-                for cat, score_data in candidate_score.category_scores.items()
-            },
-            explanation=candidate_score.explanation
-        )
-        
-    except ValueError as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Scoring error: {str(e)}"
-        )
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal error during scoring: {str(e)}"
-        )
-
-
-@router.get("/candidate/{candidate_id}/job/{job_id}")
-def get_score(
-    candidate_id: int,
-    job_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
-):
-    """Get existing score for a candidate-job pair"""
-    score = db.query(models.CandidateScore).filter(
-        models.CandidateScore.candidate_id == candidate_id,
-        models.CandidateScore.job_id == job_id
-    ).first()
-    
-    if not score:
+    if score is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Score not found"
         )
     
-    # Verify access
-    candidate = db.query(models.Candidate).filter(
-        models.Candidate.id == candidate_id,
-        models.Candidate.company_id == current_user.company_id
-    ).first()
+    db.delete(score)
+    db.commit()
     
-    if not candidate:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-    
-        return ScoringResultResponse(
-            message="Score retrieved successfully",
-            score_id=score.id,
-            total_score=score.total_score,
-            category_scores={
-                cat: CategoryScoreSchema(**score_data)
-                for cat, score_data in score.category_scores.items()
-            },
-            explanation=score.explanation
-        )
-
-
-@router.post("/score-all", response_model=BulkScoringResponse, status_code=status.HTTP_200_OK)
-async def score_all_candidates_for_job(
-    request: BulkScoringRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
-):
-    """
-    Score all candidates for a specific job.
-    
-    - Scores all candidates belonging to the job's company
-    - Checks authenticity for each candidate
-    - Stores scores and authenticity flags
-    - Returns candidates sorted by total_score (descending)
-    """
-    # Verify job belongs to user's company
-    job = db.query(models.Job).filter(
-        models.Job.id == request.job_id,
-        models.Job.company_id == current_user.company_id
-    ).first()
-    
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Job not found"
-        )
-    
-    # Get all candidates for the company
-    candidates = db.query(models.Candidate).filter(
-        models.Candidate.company_id == current_user.company_id
-    ).all()
-    
-    if not candidates:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No candidates found for this company"
-        )
-    
-    # Parse job criteria JSON
-    if isinstance(job.criteria_json, str):
-        job_criteria = json.loads(job.criteria_json)
-    else:
-        job_criteria = job.criteria_json
-    
-    # Get services
-    scoring_service = get_scoring_service()
-    authenticity_service = get_authenticity_service()
-    
-    candidates_with_scores = []
-    candidates_scored = 0
-    candidates_checked = 0
-    errors = []
-    
-    try:
-        for candidate in candidates:
-            candidate_data = {
-                "candidate_id": candidate.id,
-                "name": candidate.name,
-                "email": candidate.email,
-            }
-            
-            # Check authenticity for each candidate
-            try:
-                # Parse candidate raw profile
-                if isinstance(candidate.raw_profile, str):
-                    text_to_analyze = candidate.raw_profile
-                else:
-                    text_to_analyze = json.dumps(candidate.raw_profile, indent=2)
-                
-                # Run authenticity check
-                authenticity_result = await authenticity_service.analyze_text(
-                    text_to_analyze, use_llm=True
-                )
-                
-                # Check if flag already exists
-                existing_flag = db.query(models.AuthenticityFlag).filter(
-                    models.AuthenticityFlag.candidate_id == candidate.id
-                ).first()
-                
-                if existing_flag:
-                    # Update existing flag
-                    existing_flag.is_suspicious = authenticity_result.is_suspicious
-                    existing_flag.risk_score = authenticity_result.risk_score
-                    existing_flag.reason = authenticity_result.reason
-                    flag_id = existing_flag.id
-                else:
-                    # Create new flag
-                    new_flag = models.AuthenticityFlag(
-                        candidate_id=candidate.id,
-                        is_suspicious=authenticity_result.is_suspicious,
-                        risk_score=authenticity_result.risk_score,
-                        reason=authenticity_result.reason
-                    )
-                    db.add(new_flag)
-                    db.flush()
-                    flag_id = new_flag.id
-                
-                candidate_data["is_suspicious"] = authenticity_result.is_suspicious
-                candidate_data["risk_score"] = authenticity_result.risk_score
-                candidate_data["flag_id"] = flag_id
-                candidates_checked += 1
-                
-            except Exception as e:
-                errors.append(f"Authenticity check failed for candidate {candidate.id}: {str(e)}")
-                candidate_data["is_suspicious"] = None
-                candidate_data["risk_score"] = None
-                candidate_data["flag_id"] = None
-            
-            # Score candidate (skip if already scored)
-            existing_score = db.query(models.CandidateScore).filter(
-                models.CandidateScore.candidate_id == candidate.id,
-                models.CandidateScore.job_id == request.job_id
-            ).first()
-            
-            if existing_score:
-                # Use existing score
-                candidate_data["total_score"] = existing_score.total_score
-                candidate_data["category_scores"] = {
-                    cat: CategoryScoreSchema(**score_data)
-                    for cat, score_data in existing_score.category_scores.items()
-                }
-                candidate_data["score_id"] = existing_score.id
-            else:
-                # Score candidate
-                try:
-                    # Parse candidate raw profile for scoring
-                    if isinstance(candidate.raw_profile, str):
-                        try:
-                            candidate_profile_data = json.loads(candidate.raw_profile)
-                            candidate_profile = json.dumps(candidate_profile_data, indent=2)
-                        except json.JSONDecodeError:
-                            candidate_profile = candidate.raw_profile
-                    else:
-                        candidate_profile = json.dumps(candidate.raw_profile, indent=2)
-                    
-                    # Get LLM scoring
-                    scoring_result = await scoring_service.score_candidate(
-                        job_criteria=job_criteria,
-                        candidate_profile=candidate_profile
-                    )
-                    
-                    # Convert category scores to dict format for storage
-                    category_scores_dict = {
-                        category: {
-                            "score": score.score,
-                            "reasoning": score.reasoning
-                        }
-                        for category, score in scoring_result.category_scores.items()
-                    }
-                    
-                    # Create explanation
-                    explanation_parts = [scoring_result.explanation]
-                    if scoring_result.strengths:
-                        explanation_parts.append(f"\n\nStrengths: {', '.join(scoring_result.strengths)}")
-                    if scoring_result.weaknesses:
-                        explanation_parts.append(f"\n\nWeaknesses: {', '.join(scoring_result.weaknesses)}")
-                    full_explanation = "\n".join(explanation_parts)
-                    
-                    # Save score to database
-                    candidate_score = models.CandidateScore(
-                        candidate_id=candidate.id,
-                        job_id=request.job_id,
-                        total_score=scoring_result.total_score,
-                        category_scores=category_scores_dict,
-                        explanation=full_explanation
-                    )
-                    
-                    db.add(candidate_score)
-                    db.flush()
-                    
-                    candidate_data["total_score"] = candidate_score.total_score
-                    candidate_data["category_scores"] = {
-                        cat: CategoryScoreSchema(**score_data)
-                        for cat, score_data in candidate_score.category_scores.items()
-                    }
-                    candidate_data["score_id"] = candidate_score.id
-                    candidates_scored += 1
-                    
-                except Exception as e:
-                    errors.append(f"Scoring failed for candidate {candidate.id}: {str(e)}")
-                    candidate_data["total_score"] = None
-                    candidate_data["category_scores"] = None
-                    candidate_data["score_id"] = None
-            
-            candidates_with_scores.append(CandidateWithScore(**candidate_data))
-        
-        # Commit all changes
-        db.commit()
-        
-        # Sort candidates by total_score (descending, None values last)
-        candidates_with_scores.sort(
-            key=lambda x: x.total_score if x.total_score is not None else -1,
-            reverse=True
-        )
-        
-        # Build response message
-        message_parts = [
-            f"Processed {len(candidates)} candidates",
-            f"Scored {candidates_scored} new candidates",
-            f"Checked authenticity for {candidates_checked} candidates"
-        ]
-        if errors:
-            message_parts.append(f"({len(errors)} errors occurred)")
-        
-        return BulkScoringResponse(
-            message=" | ".join(message_parts),
-            job_id=request.job_id,
-            candidates_scored=candidates_scored,
-            candidates_checked=candidates_checked,
-            candidates=candidates_with_scores
-        )
-        
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error during bulk scoring: {str(e)}"
-        )
-
+    return None
